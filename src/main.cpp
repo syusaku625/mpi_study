@@ -9,6 +9,26 @@ const int L=128;
 const int STEP = 100000;
 const int DUMP = 1000;
 
+void dump(std::vector<double> &data) {
+    static int index = 0;
+    char filename[256];
+    sprintf(filename, "data%03d.dat", index);
+    std::cout << filename << std::endl;
+    std::ofstream ofs(filename);
+    for (unsigned int i = 0; i < data.size(); i++) {
+        ofs << i << " " << data[i] << std::endl;
+    }
+    index++;
+}
+
+void dump_mpi(vector<double> &local, int rank, int procs){
+    static vector<double> global(L);
+    MPI_Gather(&local[1], L/procs, MPI_DOUBLE, global.data(), L/procs, MPI_DOUBLE, 0 , MPI_COMM_WORLD);
+    if(rank==0){
+        dump(global);
+    }
+}
+
 void onestep(vector<double> &lattice, double h, int rank, int procs){
     const int size=lattice.size();
     static vector<double> orig(size);
@@ -23,43 +43,7 @@ void onestep(vector<double> &lattice, double h, int rank, int procs){
     }
 }
 
-void dump(std::vector<double> &data) {
-    static int index = 0;
-    char filename[256];
-    sprintf(filename, "data%03d.dat", index);
-    std::cout << filename << std::endl;
-    std::ofstream ofs(filename);
-    for (int i = 0; i < data.size(); i++) {
-        ofs << i << " " << data[i] << std::endl;
-    }
-    index++;
-}
-
-void dump_mpi(vector<double> &local, int rank, int procs){
-    static vector<double> global(L);
-    MPI_Gather(&local[1], L/procs, MPI_DOUBLE, global.data(), L/procs, MPI_DOUBLE, 0 , MPI_COMM_WORLD);
-    if(rank==0){
-        dump(global);
-    }
-}
-
-void fixed_temperature(vector<double> &lattice, int rank, int procs){
-    const double h=0.01;
-    const double Q=1.0;
-    const int s=L/procs;
-    for(int i=0; i<STEP; i++){
-        onestep(lattice, h, rank, procs);
-        if(rank==(L/4)/s){
-            lattice[L/4-rank*s+1]=Q;
-        }
-        if(rank==(3*4/L/s)){
-            lattice[3*L/4-rank*s+1]=-Q;
-        }
-        if(i%DUMP==0) dump_mpi(lattice, rank, procs);
-    }
-}
-
-void uniform_heating(vector<double> lattice , int rank, int procs){
+void uniform_heating(vector<double> &lattice , int rank, int procs){
     const double h=0.2;
     const double Q=1.0;
     for(int i=0; i<STEP; i++){
@@ -77,10 +61,26 @@ void uniform_heating(vector<double> lattice , int rank, int procs){
     }
 }
 
+void fixed_temperature(vector<double> &lattice, int rank, int procs){
+    const double h=0.01;
+    const double Q=1.0;
+    const int s=L/procs;
+    for(int i=0; i<STEP; i++){
+        onestep(lattice, h, rank, procs);
+        if(rank==(L/4)/s){
+            lattice[L/4-rank*s+1]=Q;
+        }
+        if(rank==(3*L/4/s)){
+            lattice[3*L/4-rank*s+1]=-Q;
+        }
+        if(i%DUMP==0) dump_mpi(lattice, rank, procs);
+    }
+}
+
 int main(int argc, char **argv){
     MPI_Init(&argc, &argv);
     int rank, procs;
-    MPI_Comm_size(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &procs);
     const int mysize=L/procs+2;
     vector<double> local(mysize);
